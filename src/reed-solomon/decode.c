@@ -9,20 +9,24 @@
 //   these syndromes are all zero, then we can conclude the error polynomial is also
 //   zero. if they're nonzero, then we know our message received an error in transit.
 // returns true if syndromes are all zero
-static bool reed_solomon_find_syndromes(field_t field, polynomial_t msgpoly, field_logarithm_t **generator_root_exp,
-                                        field_element_t *syndromes, size_t min_distance) {
+static bool reed_solomon_find_syndromes(field_t field, polynomial_t msgpoly, field_logarithm_t *generator_root_exp,
+                                        field_element_t *syndromes, size_t min_distance, size_t block_length) {
     bool all_zero = true;
     memset(syndromes, 0, min_distance * sizeof(field_element_t));
+
     for (unsigned int i = 0; i < min_distance; i++) {
         // profiling reveals that this function takes about 50% of the cpu time of
         // decoding. so, in order to speed it up a little, we precompute and save
         // the successive powers of the roots of the generator, which are
         // located in generator_root_exp
-        field_element_t eval = polynomial_eval_lut(field, msgpoly, generator_root_exp[i]);
+        field_element_t eval = polynomial_eval_lut(field, msgpoly, generator_root_exp);
+
         if (eval) {
             all_zero = false;
         }
+
         syndromes[i] = eval;
+		generator_root_exp += block_length;
     }
     return all_zero;
 }
@@ -276,10 +280,11 @@ void correct_reed_solomon_decoder_create(correct_reed_solomon *rs) {
     // we would have to do this work in order to calculate the syndromes
     // if we save it, we can prevent the need to recalculate it on subsequent calls
     // total memory usage is min_distance * block_length bytes e.g. 32 * 255 ~= 8k
-    rs->generator_root_exp = malloc(rs->min_distance * sizeof(field_logarithm_t *));
+    rs->generator_root_exp = calloc(rs->min_distance * rs->block_length,
+									sizeof(field_logarithm_t));
     for (unsigned int i = 0; i < rs->min_distance; i++) {
-        rs->generator_root_exp[i] = malloc(rs->block_length * sizeof(field_logarithm_t));
-        polynomial_build_exp_lut(rs->field, rs->generator_roots[i], rs->block_length - 1, rs->generator_root_exp[i]);
+        polynomial_build_exp_lut(rs->field, rs->generator_roots[i], rs->block_length - 1,
+								 rs->generator_root_exp + i * rs->block_length);
     }
 
     // calculate and store the first min_distance powers of every element in the field
@@ -330,7 +335,7 @@ ssize_t correct_reed_solomon_decode(correct_reed_solomon *rs, const uint8_t *enc
 
 
     bool all_zero = reed_solomon_find_syndromes(rs->field, rs->received_polynomial, rs->generator_root_exp,
-                                                rs->syndromes, rs->min_distance);
+                                                rs->syndromes, rs->min_distance, rs->block_length);
 
     if (all_zero) {
         // syndromes were all zero, so there was no error in the message
@@ -431,7 +436,7 @@ ssize_t correct_reed_solomon_decode_with_erasures(correct_reed_solomon *rs, cons
         reed_solomon_find_error_locator_from_roots(rs->field, erasure_length, rs->error_roots, rs->erasure_locator, rs->init_from_roots_scratch);
 
     bool all_zero = reed_solomon_find_syndromes(rs->field, rs->received_polynomial, rs->generator_root_exp,
-                                                rs->syndromes, rs->min_distance);
+                                                rs->syndromes, rs->min_distance, rs->block_length);
 
     if (all_zero) {
         // syndromes were all zero, so there was no error in the message

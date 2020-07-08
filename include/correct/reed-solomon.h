@@ -43,7 +43,7 @@ struct correct_reed_solomon {
 
     polynomial_t generator;
     field_element_t *generator_roots;
-    field_logarithm_t **generator_root_exp;
+    field_logarithm_t *generator_root_exp;
 
     polynomial_t encoded_polynomial;
     polynomial_t encoded_remainder;

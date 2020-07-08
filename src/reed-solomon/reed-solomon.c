@@ -53,9 +53,6 @@ void correct_reed_solomon_destroy(correct_reed_solomon *rs) {
         polynomial_destroy(rs->last_error_locator);
         polynomial_destroy(rs->error_evaluator);
         polynomial_destroy(rs->error_locator_derivative);
-        for (unsigned int i = 0; i < rs->min_distance; i++) {
-            free(rs->generator_root_exp[i]);
-        }
         free(rs->generator_root_exp);
         for (field_operation_t i = 0; i < 256; i++) {
             free(rs->element_exp[i]);
